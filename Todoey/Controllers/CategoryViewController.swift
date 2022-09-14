@@ -7,20 +7,29 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
+import ChameleonFramework
 
-class CategoryViewController: UITableViewController {
+class CategoryViewController: SwipeTableViewController {
 
-    var categoryArray = [Category]()
+    let realm = try! Realm()
 
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
-
+    var categoryArray: Results<Category>?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
 
         loadCategories()
+
+        tableView.separatorStyle = .none
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        guard let navBar = navigationController?.navigationBar else {
+            fatalError("Navigation controller does not exist.")
+        }
+        navBar.backgroundColor = UIColor(hexString: "1D9BF6")
+    }
     //MARK: - Add New Categories
     @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
         let alert = UIAlertController(title: "Add New Todoey Category", message: "", preferredStyle: .alert)
@@ -34,11 +43,11 @@ class CategoryViewController: UITableViewController {
         let action = UIAlertAction(title: "Add Category", style: .default) { action in
             // What will happen once the user clicks the Add Item button.
 
-            let newCategory = Category(context: self.context)
+            let newCategory = Category()
             newCategory.name = textField.text!
-            self.categoryArray.append(newCategory)
+            newCategory.color = UIColor.randomFlat().hexValue()
 
-            self.saveCategories()
+            self.save(category: newCategory)
         }
 
         alert.addAction(action)
@@ -47,26 +56,35 @@ class CategoryViewController: UITableViewController {
     }
 
     //MARK: - Data Manipulation Methods
-    func saveCategories() {
+    func save(category: Category) {
 
         do {
-            try context.save()
+            try realm.write {
+                realm.add(category)
+            }
         } catch {
             print("Error encoding category array, \(error)")
         }
         self.tableView.reloadData()
     }
 
-    func loadCategories(with request: NSFetchRequest<Category> = Category.fetchRequest()) {
-
-        do {
-            categoryArray = try context.fetch(request)
-
-        } catch {
-            print("Error fetching data from context \(error)")
-        }
+    func loadCategories() {
+        categoryArray = realm.objects(Category.self)
 
         tableView.reloadData()
+    }
+
+    //MARK: - Delete Data From Swipe
+    override func updateModel(at indexPath: IndexPath) {
+        if let categoryForDeletion = self.categoryArray?[indexPath.row] {
+            do {
+                try self.realm.write {
+                    self.realm.delete(categoryForDeletion)
+                }
+            } catch {
+                print("Error deleting category, \(error)")
+            }
+        }
     }
 }
 
@@ -81,7 +99,7 @@ extension CategoryViewController {
         let destinationVC = segue.destination as! TodoListViewController
 
         if let indexPath = tableView.indexPathForSelectedRow {
-            destinationVC.selectedCategory = categoryArray[indexPath.row]
+            destinationVC.selectedCategory = categoryArray?[indexPath.row]
         }
     }
 }
@@ -90,18 +108,21 @@ extension CategoryViewController {
 extension CategoryViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
 
-        let category = categoryArray[indexPath.row]
+        if let category = categoryArray?[indexPath.row] {
+            cell.backgroundColor = UIColor(hexString: category.color)
 
-        cell.textLabel?.text = category.name
+            guard let categoryColor = UIColor(hexString: category.color) else { fatalError() }
+            cell.textLabel?.text = category.name
+
+            cell.textLabel?.textColor = ContrastColorOf(categoryColor, returnFlat: true)
+        }
 
         return cell
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return categoryArray.count
+        return categoryArray?.count ?? 1
     }
-
-    
 }
